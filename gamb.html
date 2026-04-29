@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>3張牌撲克勝率模擬器</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            max-width: 600px;
+            margin: 4px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+
+        .instructions {
+            background: #e8f4f8;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+            .input-group label {
+                flex: 0 0 100px; /* 固定標籤寬度 */
+                font-weight: bold;
+                text-align: right;
+            }
+
+        input[type="text"], input[type="number"] {
+            flex: 1;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            text-transform: uppercase;
+        }
+
+        input[type="number"] {
+            flex: 0 0 120px; /* 稍微加大一點數字輸入框 */
+            text-transform: none;
+        }
+
+        .button-row {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 12px 30px;
+            font-size: 16px;
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+            button:hover {
+                background-color: #219653;
+            }
+
+        .result-box {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 10px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 16px;
+            white-space: pre-wrap;
+            display: none;
+            margin: 4px 0px 4px 0px;
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions">
+        <strong>格式說明：</strong>花色 (S黑桃, H紅心, D方塊, C梅花) + 數字。<br>
+        鬼牌請直接輸入 <code>JOKER</code>。中間用「空白鍵」隔開。<br>
+    </div>
+
+    <div class="input-group">
+        <label for="simRounds">模擬局數：</label>
+        <input type="number" id="simRounds" placeholder="局數" value="10000" min="1" max="1000000" onkeydown="if(event.key==='Enter') startSimulation()" onfocus="this.select()">
+    </div>
+
+    <div class="input-group">
+        <label for="handInput">手牌：</label>
+        <input type="text" id="handInput" placeholder="請輸入 3 張手牌..." value="SA H8 JOKER" onkeydown="if(event.key==='Enter') startSimulation()" onfocus="this.select()">
+        <button onclick="startSimulation()">開始模擬 (重算勝率)</button>
+    </div>
+
+    <div id="win-rate-box" class="result-box"></div>
+
+    <div class="input-group">
+        <label for="potSize">底池金額：</label>
+        <input type="number" id="potSize" placeholder="目前底池金額 (元)" value="20" min="0" onkeydown="if(event.key==='Enter') updatePotOdds()" onfocus="this.select()">
+    </div>
+
+    <div id="pot-odds-box" class="result-box"></div>
+
+    <script>
+        // --- 全域變數 ---
+        let lastWinRate = null;
+        const HIGH_CARD = 1, PAIR = 2, STRAIGHT = 3, FLUSH = 4, STRAIGHT_FLUSH = 5, THREE_OF_A_KIND = 6;
+
+        class Card {
+            constructor(rank, suit) {
+                this.rank = rank;
+                this.suit = suit;
+            }
+        }
+
+        function compareScores(a, b) {
+            for (let i = 0; i < Math.max(a.length, b.length); i++) {
+                let valA = a[i] || 0;
+                let valB = b[i] || 0;
+                if (valA > valB) return 1;
+                if (valA < valB) return -1;
+            }
+            return 0;
+        }
+
+        function getCombinations(arr, k) {
+            let combs = [];
+            if (k > arr.length || k <= 0) return combs;
+            if (k === arr.length) return [arr];
+            if (k === 1) return arr.map(val => [val]);
+            for (let i = 0; i < arr.length - k + 1; i++) {
+                let head = arr.slice(i, i + 1);
+                let tailcombs = getCombinations(arr.slice(i + 1), k - 1);
+                for (let j = 0; j < tailcombs.length; j++) {
+                    combs.push(head.concat(tailcombs[j]));
+                }
+            }
+            return combs;
+        }
+
+        function getRandomSample(arr, n) {
+            let result = new Array(n), len = arr.length, taken = new Array(len);
+            while (n--) {
+                let x = Math.floor(Math.random() * len);
+                result[n] = arr[x in taken ? taken[x] : x];
+                taken[x] = --len in taken ? taken[len] : len;
+            }
+            return result;
+        }
+
+        function evaluate3Cards(cards) {
+            let jokers = cards.filter(c => c.suit === 'JOKER');
+            let reals = cards.filter(c => c.suit !== 'JOKER').sort((a, b) => b.rank - a.rank);
+            let jokerCount = jokers.length;
+
+            if (jokerCount === 2) return [THREE_OF_A_KIND, reals[0].rank];
+            else if (jokerCount === 1) {
+                let c1 = reals[0], c2 = reals[1];
+                if (c1.rank === c2.rank) return [THREE_OF_A_KIND, c1.rank];
+                if (c1.suit === c2.suit) {
+                    let diff = c1.rank - c2.rank;
+                    if (diff === 1) return [STRAIGHT_FLUSH, c1.rank < 14 ? c1.rank + 1 : 14];
+                    if (diff === 2) return [STRAIGHT_FLUSH, c1.rank];
+                    if (c1.rank === 14 && c2.rank === 2) return [STRAIGHT_FLUSH, 3];
+                    if (c1.rank === 14 && c2.rank === 3) return [STRAIGHT_FLUSH, 3];
+                    let kicker = c1.rank !== 14 ? 14 : 13;
+                    let flushRanks = [c1.rank, c2.rank, kicker].sort((a, b) => b - a);
+                    return [FLUSH, flushRanks[0], flushRanks[1], flushRanks[2]];
+                } else {
+                    let diff = c1.rank - c2.rank;
+                    if (diff === 1) return [STRAIGHT, c1.rank < 14 ? c1.rank + 1 : 14];
+                    if (diff === 2) return [STRAIGHT, c1.rank];
+                    if (c1.rank === 14 && c2.rank === 2) return [STRAIGHT, 3];
+                    if (c1.rank === 14 && c2.rank === 3) return [STRAIGHT, 3];
+                    return [PAIR, c1.rank, c2.rank];
+                }
+            } else {
+                let ranks = reals.map(c => c.rank);
+                let isFlush = (reals[0].suit === reals[1].suit && reals[1].suit === reals[2].suit);
+                let isStraight = false, straightHigh = 0;
+                if (ranks[0] - ranks[1] === 1 && ranks[1] - ranks[2] === 1) {
+                    isStraight = true; straightHigh = ranks[0];
+                } else if (ranks[0] === 14 && ranks[1] === 3 && ranks[2] === 2) {
+                    isStraight = true; straightHigh = 3;
+                }
+                if (isFlush && isStraight) return [STRAIGHT_FLUSH, straightHigh];
+                if (ranks[0] === ranks[1] && ranks[1] === ranks[2]) return [THREE_OF_A_KIND, ranks[0]];
+                if (isFlush) return [FLUSH, ranks[0], ranks[1], ranks[2]];
+                if (isStraight) return [STRAIGHT, straightHigh];
+                if (ranks[0] === ranks[1]) return [PAIR, ranks[0], ranks[2]];
+                if (ranks[1] === ranks[2]) return [PAIR, ranks[1], ranks[0]];
+                return [HIGH_CARD, ranks[0], ranks[1], ranks[2]];
+            }
+        }
+
+        function evaluateBest3Of5(fiveCards) {
+            let bestScore = [0];
+            let combos = getCombinations(fiveCards, 3);
+            for (let combo of combos) {
+                let score = evaluate3Cards(combo);
+                if (compareScores(score, bestScore) > 0) bestScore = score;
+            }
+            return bestScore;
+        }
+
+        function createDeck() {
+            const suits = ['S', 'H', 'D', 'C'];
+            let deck = [];
+            for (let rank = 2; rank <= 14; rank++) {
+                for (let suit of suits) deck.push(new Card(rank, suit));
+            }
+            deck.push(new Card(15, 'JOKER'));
+            deck.push(new Card(15, 'JOKER'));
+            return deck;
+        }
+
+        function startSimulation() {
+            const winBox = document.getElementById('win-rate-box');
+            winBox.style.display = 'block';
+            winBox.innerText = '計算中，請稍候... ⏳';
+            document.getElementById('pot-odds-box').style.display = 'none';
+
+            // 每次更新手牌表示開局新局，重設底池金額
+            document.getElementById('potSize').value = 20;
+
+            setTimeout(() => {
+                const inputStr = document.getElementById('handInput').value.trim().toUpperCase();
+                const myCards = inputStr.split(/\s+/);
+                const numSimulations = parseInt(document.getElementById('simRounds').value, 10) || 10000;
+
+                if (myCards.length !== 3) {
+                    winBox.innerText = "⚠️ 錯誤：請確認輸入了 3 張牌！";
+                    return;
+                }
+
+                try {
+                    let myHand = [];
+                    for (let s of myCards) {
+                        if (s === 'JOKER') myHand.push(new Card(15, 'JOKER'));
+                        else {
+                            let suit = s[0], rankStr = s.substring(1);
+                            let rankMap = { 'A': 14, 'K': 13, 'Q': 12, 'J': 11, '10': 10 };
+                            let rank = rankMap[rankStr] || parseInt(rankStr, 10);
+                            myHand.push(new Card(rank, suit));
+                        }
+                    }
+
+                    let deck = createDeck();
+                    for (let myCard of myHand) {
+                        let index = deck.findIndex(card => card.suit === myCard.suit && card.rank === myCard.rank);
+                        if (index > -1) deck.splice(index, 1);
+                    }
+
+                    let wins = 0, ties = 0, losses = 0;
+                    for (let i = 0; i < numSimulations; i++) {
+                        let sampledCards = getRandomSample(deck, 11);
+                        let community = sampledCards.slice(0, 2), opp1 = sampledCards.slice(2, 5), opp2 = sampledCards.slice(5, 8), opp3 = sampledCards.slice(8, 11);
+                        let myScore = evaluateBest3Of5(myHand.concat(community));
+                        let maxOppScore = evaluateBest3Of5(opp1.concat(community));
+                        let s2 = evaluateBest3Of5(opp2.concat(community)), s3 = evaluateBest3Of5(opp3.concat(community));
+                        if (compareScores(s2, maxOppScore) > 0) maxOppScore = s2;
+                        if (compareScores(s3, maxOppScore) > 0) maxOppScore = s3;
+
+                        let res = compareScores(myScore, maxOppScore);
+                        if (res > 0) wins++; else if (res === 0) ties++; else losses++;
+                    }
+
+                    lastWinRate = (wins / numSimulations) * 100;
+                    let tieRate = (ties / numSimulations) * 100, lossRate = (losses / numSimulations) * 100;
+
+                    winBox.innerHTML = `📊 <strong>手牌勝率模擬結果：</strong><br>` +
+                        `🟢 勝率 (Win):  ${lastWinRate.toFixed(2)}%<br>` +
+                        `🟡 平手 (Tie):  ${tieRate.toFixed(2)}%<br>` +
+                        `🔴 敗率 (Loss): ${lossRate.toFixed(2)}%`;
+
+                    updatePotOdds();
+                } catch (e) {
+                    winBox.innerText = "⚠️ 錯誤：輸入格式不正確。";
+                }
+            }, 50);
+        }
+
+        function updatePotOdds() {
+            const potBox = document.getElementById('pot-odds-box');
+            const currentPot = parseFloat(document.getElementById('potSize').value) || 0;
+            potBox.style.display = 'block';
+
+            if (lastWinRate === null) {
+                potBox.innerHTML = `⚠️ <strong>請先計算勝率。</strong>`;
+                return;
+            }
+
+            const betOptions = [5, 15, 25, 50];
+            let potOddsHtml = betOptions.map(bet => {
+                let odds = (bet / (currentPot + bet)) * 100;
+                let isProfitable = lastWinRate > odds;
+                let color = isProfitable ? "#27ae60" : "#e74c3c";
+                let advice = isProfitable ? "✅ 值得加注" : "❌ 不建議加注";
+                return `加注 ${bet.toString().padStart(2, ' ')} 元：需勝率 ${odds.toFixed(1).padStart(4, ' ')}% | <span style="color: ${color}">${advice}</span>`;
+            }).join('<br>');
+
+            potBox.innerHTML = `💰 <strong>底池賠率分析 (目前底池: ${currentPot} 元)：</strong><br>` +
+                `${potOddsHtml}`;
+        }
+    </script>
+</body>
+</html>
