@@ -119,11 +119,13 @@
         // --- 全域變數 ---
         let lastWinRate = null;
         const HIGH_CARD = 1, PAIR = 2, STRAIGHT = 3, FLUSH = 4, STRAIGHT_FLUSH = 5, THREE_OF_A_KIND = 6;
+        const SUIT_WEIGHTS = { 'S': 4, 'H': 3, 'C': 2, 'D': 1, 'JOKER': 0 };
 
         class Card {
             constructor(rank, suit) {
                 this.rank = rank;
                 this.suit = suit;
+                this.suitWeight = SUIT_WEIGHTS[suit] || 0;
             }
         }
 
@@ -163,47 +165,69 @@
         }
 
         function evaluate3Cards(cards) {
-            let jokers = cards.filter(c => c.suit === 'JOKER');
-            let reals = cards.filter(c => c.suit !== 'JOKER').sort((a, b) => b.rank - a.rank);
+            // 排序：點數大到小，點數相同比花色大到小
+            let sortedCards = [...cards].sort((a, b) => {
+                if (b.rank !== a.rank) return b.rank - a.rank;
+                return b.suitWeight - a.suitWeight;
+            });
+
+            let jokers = sortedCards.filter(c => c.suit === 'JOKER');
+            let reals = sortedCards.filter(c => c.suit !== 'JOKER');
             let jokerCount = jokers.length;
 
-            if (jokerCount === 2) return [THREE_OF_A_KIND, reals[0].rank];
-            else if (jokerCount === 1) {
+            if (jokerCount === 2) {
+                // 兩張鬼牌 + 一張實體牌 = 三條
+                // 三條最高點數為該實體牌，花色視為最高(黑桃級)
+                return [THREE_OF_A_KIND, reals[0].rank, 4];
+            } else if (jokerCount === 1) {
                 let c1 = reals[0], c2 = reals[1];
-                if (c1.rank === c2.rank) return [THREE_OF_A_KIND, c1.rank];
+                // 三條
+                if (c1.rank === c2.rank) return [THREE_OF_A_KIND, c1.rank, 4];
+
+                // 同花判斷
                 if (c1.suit === c2.suit) {
                     let diff = c1.rank - c2.rank;
-                    if (diff === 1) return [STRAIGHT_FLUSH, c1.rank < 14 ? c1.rank + 1 : 14];
-                    if (diff === 2) return [STRAIGHT_FLUSH, c1.rank];
-                    if (c1.rank === 14 && c2.rank === 2) return [STRAIGHT_FLUSH, 3];
-                    if (c1.rank === 14 && c2.rank === 3) return [STRAIGHT_FLUSH, 3];
-                    let kicker = c1.rank !== 14 ? 14 : 13;
-                    let flushRanks = [c1.rank, c2.rank, kicker].sort((a, b) => b - a);
-                    return [FLUSH, flushRanks[0], flushRanks[1], flushRanks[2]];
+                    // 同花順
+                    if (diff === 1) return [STRAIGHT_FLUSH, c1.rank < 14 ? c1.rank + 1 : 14, 4];
+                    if (diff === 2) return [STRAIGHT_FLUSH, c1.rank - 1, 4];
+                    if (c1.rank === 14 && c2.rank === 2) return [STRAIGHT_FLUSH, 3, 4]; // A2 -> A23
+                    if (c1.rank === 14 && c2.rank === 3) return [STRAIGHT_FLUSH, 3, 4]; // A3 -> A23
+
+                    // 普通同花 (鬼牌當作同花色的 A，若原本就有 A 則當作 K)
+                    let jokerRank = (c1.rank === 14) ? 13 : 14;
+                    let flushRanks = [c1.rank, c2.rank, jokerRank].sort((a, b) => b - a);
+                    return [FLUSH, flushRanks[0], flushRanks[1], flushRanks[2], c1.suitWeight];
                 } else {
+                    // 順子判斷
                     let diff = c1.rank - c2.rank;
-                    if (diff === 1) return [STRAIGHT, c1.rank < 14 ? c1.rank + 1 : 14];
-                    if (diff === 2) return [STRAIGHT, c1.rank];
-                    if (c1.rank === 14 && c2.rank === 2) return [STRAIGHT, 3];
-                    if (c1.rank === 14 && c2.rank === 3) return [STRAIGHT, 3];
-                    return [PAIR, c1.rank, c2.rank];
+                    if (diff === 1) return [STRAIGHT, c1.rank < 14 ? c1.rank + 1 : 14, 4];
+                    if (diff === 2) return [STRAIGHT, c1.rank - 1, 4];
+                    if (c1.rank === 14 && c2.rank === 2) return [STRAIGHT, 3, 4];
+                    if (c1.rank === 14 && c2.rank === 3) return [STRAIGHT, 3, 4];
+
+                    // 對子 (鬼牌湊成較大點數的對子)
+                    return [PAIR, c1.rank, c1.suitWeight, c2.rank, c2.suitWeight];
                 }
             } else {
                 let ranks = reals.map(c => c.rank);
                 let isFlush = (reals[0].suit === reals[1].suit && reals[1].suit === reals[2].suit);
                 let isStraight = false, straightHigh = 0;
+                
                 if (ranks[0] - ranks[1] === 1 && ranks[1] - ranks[2] === 1) {
                     isStraight = true; straightHigh = ranks[0];
                 } else if (ranks[0] === 14 && ranks[1] === 3 && ranks[2] === 2) {
-                    isStraight = true; straightHigh = 3;
+                    isStraight = true; straightHigh = 3; // A32 順子
                 }
-                if (isFlush && isStraight) return [STRAIGHT_FLUSH, straightHigh];
-                if (ranks[0] === ranks[1] && ranks[1] === ranks[2]) return [THREE_OF_A_KIND, ranks[0]];
-                if (isFlush) return [FLUSH, ranks[0], ranks[1], ranks[2]];
-                if (isStraight) return [STRAIGHT, straightHigh];
-                if (ranks[0] === ranks[1]) return [PAIR, ranks[0], ranks[2]];
-                if (ranks[1] === ranks[2]) return [PAIR, ranks[1], ranks[0]];
-                return [HIGH_CARD, ranks[0], ranks[1], ranks[2]];
+
+                if (isFlush && isStraight) return [STRAIGHT_FLUSH, straightHigh, reals[0].suitWeight];
+                if (ranks[0] === ranks[1] && ranks[1] === ranks[2]) return [THREE_OF_A_KIND, ranks[0], reals[0].suitWeight];
+                if (isFlush) return [FLUSH, ranks[0], ranks[1], ranks[2], reals[0].suitWeight];
+                if (isStraight) return [STRAIGHT, straightHigh, reals[0].suitWeight];
+                if (ranks[0] === ranks[1]) return [PAIR, ranks[0], Math.max(reals[0].suitWeight, reals[1].suitWeight), ranks[2], reals[2].suitWeight];
+                if (ranks[1] === ranks[2]) return [PAIR, ranks[1], Math.max(reals[1].suitWeight, reals[2].suitWeight), ranks[0], reals[0].suitWeight];
+                
+                // HIGH_CARD 比較：點數1 -> 花色1 -> 點數2 -> 花色2 -> 點數3 -> 花色3
+                return [HIGH_CARD, reals[0].rank, reals[0].suitWeight, reals[1].rank, reals[1].suitWeight, reals[2].rank, reals[2].suitWeight];
             }
         }
 
