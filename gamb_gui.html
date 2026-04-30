@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>3張牌撲克勝率模擬器</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+            display: flex;
+            width: 100%;
+            max-width: 1100px;
+            overflow: hidden;
+        }
+
+        /* 左側：牌庫選取 */
+        .input-section {
+            flex: 1.1;
+            padding: 20px;
+            border-right: 1px solid #eee;
+        }
+
+        /* 右側：預覽、設定與結果 */
+        .result-section {
+            flex: 0.9;
+            padding: 20px;
+            background-color: #fcfdfe;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            font-size: 18px;
+            margin: 0 0 10px 0;
+        }
+
+        .instructions {
+            background: #e8f4f8;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-bottom: 12px;
+            line-height: 1.3;
+        }
+
+        .card-selector {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+            background: #f9f9f9;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #eee;
+        }
+
+        .deck-card {
+            width: 100%;
+            height: 28px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            background: white;
+            font-weight: bold;
+            user-select: none;
+            transition: all 0.2s;
+        }
+
+            .deck-card:hover {
+                transform: translateY(-1px);
+                border-color: #27ae60;
+            }
+
+            .deck-card.selected {
+                border: 2px solid #27ae60 !important;
+                background: #f0fff4 !important;
+                box-shadow: 0 2px 6px rgba(39, 174, 96, 0.2);
+                z-index: 1;
+            }
+
+            .deck-card.S {
+                color: #2c3e50;
+            }
+
+            .deck-card.H {
+                color: #e74c3c;
+            }
+
+            .deck-card.D {
+                color: #e74c3c;
+            }
+
+            .deck-card.C {
+                color: #2c3e50;
+            }
+
+            .deck-card.JOKER {
+                color: #8e44ad;
+            }
+
+        .hand-preview {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            padding: 10px;
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #eee;
+        }
+
+        .preview-card {
+            width: 45px;
+            height: 65px;
+            border: 2px dashed #ccc;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+            background: #fafafa;
+        }
+
+            .preview-card.active {
+                border: 2px solid #27ae60;
+                background: #f0fff4;
+            }
+
+            .preview-card.S {
+                color: #2c3e50;
+            }
+
+            .preview-card.H {
+                color: #e74c3c;
+            }
+
+            .preview-card.D {
+                color: #e74c3c;
+            }
+
+            .preview-card.C {
+                color: #2c3e50;
+            }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .input-row-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-row {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+            .input-row label {
+                white-space: nowrap;
+                font-weight: bold;
+                font-size: 13px;
+            }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+            font-weight: bold;
+        }
+
+            button:hover {
+                background-color: #219653;
+            }
+
+            button:disabled {
+                background-color: #bdc3c7;
+                cursor: not-allowed;
+            }
+
+        .result-box {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            border-left: 5px solid #27ae60;
+            visibility: hidden;
+        }
+
+        /* 選牌上限晃動動畫 */
+        @keyframes shake {
+            0%, 100% {
+                transform: translateX(0);
+            }
+
+            25% {
+                transform: translateX(-4px);
+            }
+
+            75% {
+                transform: translateX(4px);
+            }
+        }
+
+        .shake {
+            animation: shake 0.2s ease-in-out 0s 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="input-section">
+            <div id="deck" class="card-selector"></div>
+        </div>
+
+        <div class="result-section">
+            <div class="hand-preview" id="handPreview">
+                <div class="preview-card" id="p1">?</div>
+                <div class="preview-card" id="p2">?</div>
+                <div class="preview-card" id="p3">?</div>
+            </div>
+
+            <div class="control-group">
+                <div class="input-row-container">
+                    <div class="input-row">
+                        <label for="simRounds">局數</label>
+                        <input type="number" id="simRounds" value="10000" min="1" max="1000000" onkeydown="if(event.key==='Enter') startSimulation()" onfocus="this.select()">
+                        <button id="simBtn" onclick="startSimulation()">開始模擬計算</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="win-rate-box" class="result-box"></div>
+
+            <div class="input-row-container">
+                <div class="input-row">
+                    <label for="potSize">底池</label>
+                    <input type="number" id="potSize" value="20" min="0" onkeydown="if(event.key==='Enter') updatePotOdds()" onfocus="this.select()">
+                </div>
+            </div>
+
+            <div id="pot-odds-box" class="result-box"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- 靜態資源與常數 ---
+        const HIGH_CARD = 1, PAIR = 2, STRAIGHT = 3, FLUSH = 4, STRAIGHT_FLUSH = 5, THREE_OF_A_KIND = 6;
+        const SUIT_WEIGHTS = { 'S': 4, 'H': 3, 'C': 2, 'D': 1, 'JOKER': 0 };
+        const SUIT_NAMES = { 'S': '♠', 'H': '♥', 'D': '♦', 'C': '♣', 'JOKER': '🃏' };
+
+        class Card {
+            constructor(rank, suit, displayRank) {
+                this.rank = rank;
+                this.suit = suit;
+                this.displayRank = displayRank;
+                this.suitWeight = SUIT_WEIGHTS[suit] || 0;
+                this.id = suit + rank;
+            }
+        }
+
+        // 預先生成靜態牌池 (池化優化)
+        const CARD_POOL = [];
+        const FULL_DECK = [];
+        (function generatePool() {
+            const suits = ['S', 'H', 'C', 'D'];
+            const ranks = [
+                { r: 14, d: 'A' }, { r: 13, d: 'K' }, { r: 12, d: 'Q' }, { r: 11, d: 'J' },
+                { r: 10, d: '10' }, { r: 9, d: '9' }, { r: 8, d: '8' }, { r: 7, d: '7' },
+                { r: 6, d: '6' }, { r: 5, d: '5' }, { r: 4, d: '4' }, { r: 3, d: '3' }, { r: 2, d: '2' }
+            ];
+            ranks.forEach(r => {
+                suits.forEach(s => {
+                    const c = new Card(r.r, s, r.d);
+                    CARD_POOL.push(c);
+                    FULL_DECK.push(c);
+                });
+            });
+            for (let i = 0; i < 2; i++) {
+                const j = new Card(15, 'JOKER', 'JOKER');
+                j.id = 'JOKER' + i;
+                CARD_POOL.push(j);
+                FULL_DECK.push(j);
+            }
+        })();
+
+        let selectedCards = [];
+        let lastWinRate = null;
+
+        // --- 初始化 UI ---
+        function initUI() {
+            const deckEl = document.getElementById('deck');
+            // 按點數垂直、花色水平排列渲染
+            const ranks = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
+            const suits = ['S', 'H', 'C', 'D'];
+
+            ranks.forEach(r => {
+                suits.forEach(s => {
+                    const card = CARD_POOL.find(c => c.rank === r && c.suit === s);
+                    createCardBtn(card, deckEl, false);
+                });
+            });
+            CARD_POOL.filter(c => c.suit === 'JOKER').forEach(j => createCardBtn(j, deckEl, true));
+        }
+
+        function createCardBtn(card, container, isJoker) {
+            const el = document.createElement('div');
+            el.className = `deck-card ${card.suit}`;
+            el.id = `ui-${card.id}`;
+            el.innerText = isJoker ? '🃏' : SUIT_NAMES[card.suit] + card.displayRank;
+            if (isJoker) el.style.gridColumn = "span 2";
+            el.onclick = () => toggleCard(card);
+            container.appendChild(el);
+        }
+
+        function toggleCard(card) {
+            const idx = selectedCards.findIndex(c => c.id === card.id);
+            if (idx > -1) {
+                selectedCards.splice(idx, 1);
+                document.getElementById(`ui-${card.id}`).classList.remove('selected');
+            } else {
+                if (selectedCards.length >= 3) {
+                    const container = document.getElementById('deck');
+                    container.classList.add('shake');
+                    setTimeout(() => container.classList.remove('shake'), 400);
+                    return;
+                }
+                // 當開始選取新的一手牌時，重置底池為 20
+                if (selectedCards.length === 0) {
+                    document.getElementById('potSize').value = 20;
+                }
+                selectedCards.push(card);
+                document.getElementById(`ui-${card.id}`).classList.add('selected');
+            }
+            updatePreview();
+        }
+
+        function updatePreview() {
+            for (let i = 1; i <= 3; i++) {
+                const p = document.getElementById(`p${i}`);
+                const c = selectedCards[i - 1];
+                if (c) {
+                    p.innerText = c.suit === 'JOKER' ? '🃏' : SUIT_NAMES[c.suit] + c.displayRank;
+                    p.className = `preview-card active ${c.suit}`;
+                } else {
+                    p.innerText = '?';
+                    p.className = 'preview-card';
+                }
+            }
+        }
+
+        // --- 核心演算法 (優化後) ---
+        function evaluate3Cards(cards) {
+            const sorted = [...cards].sort((a, b) => b.rank !== a.rank ? b.rank - a.rank : b.suitWeight - a.suitWeight);
+            const jokers = sorted.filter(c => c.suit === 'JOKER'), reals = sorted.filter(c => c.suit !== 'JOKER');
+            const jCount = jokers.length;
+
+            if (jCount === 2) return [THREE_OF_A_KIND, reals[0].rank, 4];
+            if (jCount === 1) {
+                const [c1, c2] = reals;
+                if (c1.rank === c2.rank) return [THREE_OF_A_KIND, c1.rank, 4];
+                if (c1.suit === c2.suit) {
+                    const diff = c1.rank - c2.rank;
+                    if (diff === 1) return [STRAIGHT_FLUSH, c1.rank < 14 ? c1.rank + 1 : 14, 4];
+                    if (diff === 2) return [STRAIGHT_FLUSH, c1.rank - 1, 4];
+                    if (c1.rank === 14 && (c2.rank === 2 || c2.rank === 3)) return [STRAIGHT_FLUSH, 3, 4];
+                    return [FLUSH, (c1.rank === 14 ? 13 : 14), c1.rank, c2.rank, c1.suitWeight];
+                }
+                const diff = c1.rank - c2.rank;
+                if (diff === 1) return [STRAIGHT, c1.rank < 14 ? c1.rank + 1 : 14, 4];
+                if (diff === 2) return [STRAIGHT, c1.rank - 1, 4];
+                if (c1.rank === 14 && (c2.rank === 2 || c2.rank === 3)) return [STRAIGHT, 3, 4];
+                return [PAIR, c1.rank, c1.suitWeight, c2.rank, c2.suitWeight];
+            }
+
+            const rks = reals.map(c => c.rank), sWeight = reals[0].suitWeight;
+            const isFlush = (reals[0].suit === reals[1].suit && reals[1].suit === reals[2].suit);
+            const isStr = (rks[0] - rks[1] === 1 && rks[1] - rks[2] === 1) || (rks[0] === 14 && rks[1] === 3 && rks[2] === 2);
+            const strHigh = (rks[0] === 14 && rks[1] === 3 && rks[2] === 2) ? 3 : rks[0];
+
+            if (isFlush && isStr) return [STRAIGHT_FLUSH, strHigh, sWeight];
+            if (rks[0] === rks[1] && rks[1] === rks[2]) return [THREE_OF_A_KIND, rks[0], sWeight];
+            if (isFlush) return [FLUSH, rks[0], rks[1], rks[2], sWeight];
+            if (isStr) return [STRAIGHT, strHigh, sWeight];
+            if (rks[0] === rks[1]) return [PAIR, rks[0], Math.max(reals[0].suitWeight, reals[1].suitWeight), rks[2], reals[2].suitWeight];
+            if (rks[1] === rks[2]) return [PAIR, rks[1], Math.max(reals[1].suitWeight, reals[2].suitWeight), rks[0], reals[0].suitWeight];
+            return [HIGH_CARD, rks[0], reals[0].suitWeight, rks[1], reals[1].suitWeight, rks[2], reals[2].suitWeight];
+        }
+
+        // 靜態組合優化 (避免遞迴)
+        function evaluateBest3Of5(c) {
+            let best = [0];
+            const combos = [
+                [c[0], c[1], c[2]], [c[0], c[1], c[3]], [c[0], c[1], c[4]], [c[0], c[2], c[3]], [c[0], c[2], c[4]],
+                [c[0], c[3], c[4]], [c[1], c[2], c[3]], [c[1], c[2], c[4]], [c[1], c[3], c[4]], [c[2], c[3], c[4]]
+            ];
+            for (let combo of combos) {
+                const s = evaluate3Cards(combo);
+                for (let i = 0; i < Math.max(s.length, best.length); i++) {
+                    if ((s[i] || 0) > (best[i] || 0)) { best = s; break; }
+                    if ((s[i] || 0) < (best[i] || 0)) break;
+                }
+            }
+            return best;
+        }
+
+        // --- 模擬與異步處理 ---
+        async function startSimulation() {
+            if (selectedCards.length !== 3) { alert("請先點選 3 張手牌！"); return; }
+            const simBtn = document.getElementById('simBtn');
+            const winBox = document.getElementById('win-rate-box');
+            const potBox = document.getElementById('pot-odds-box');
+
+            const currentHand = [...selectedCards];
+            selectedCards.forEach(c => document.getElementById(`ui-${c.id}`).classList.remove('selected'));
+            selectedCards = [];
+
+            simBtn.disabled = true;
+            winBox.style.visibility = 'visible';
+            winBox.innerText = '計算中... ⏳';
+            potBox.style.visibility = 'hidden';
+
+            await new Promise(r => setTimeout(r, 50)); // 讓 UI 更新「計算中」
+
+            const numSim = parseInt(document.getElementById('simRounds').value) || 10000;
+            const deck = FULL_DECK.filter(c => !currentHand.some(h => h.id === c.id));
+            let wins = 0, ties = 0;
+
+            // 分批計算以防 UI 凍結
+            const batchSize = 5000;
+            for (let i = 0; i < numSim; i += batchSize) {
+                const currentBatch = Math.min(batchSize, numSim - i);
+                for (let j = 0; j < currentBatch; j++) {
+                    // Fisher-Yates 抽樣優化
+                    const pool = [...deck];
+                    const sampled = [];
+                    for (let k = 0; k < 11; k++) {
+                        const rand = Math.floor(Math.random() * pool.length);
+                        sampled.push(pool.splice(rand, 1)[0]);
+                    }
+                    const comm = sampled.slice(0, 2);
+                    const myScore = evaluateBest3Of5(currentHand.concat(comm));
+                    let oppMax = evaluateBest3Of5(sampled.slice(2, 5).concat(comm));
+                    const s2 = evaluateBest3Of5(sampled.slice(5, 8).concat(comm));
+                    const s3 = evaluateBest3Of5(sampled.slice(8, 11).concat(comm));
+
+                    // 比賽分勝負
+                    const compare = (a, b) => {
+                        for (let x = 0; x < Math.max(a.length, b.length); x++) {
+                            if ((a[x] || 0) > (b[x] || 0)) return 1;
+                            if ((a[x] || 0) < (b[x] || 0)) return -1;
+                        }
+                        return 0;
+                    };
+                    if (compare(s2, oppMax) > 0) oppMax = s2;
+                    if (compare(s3, oppMax) > 0) oppMax = s3;
+
+                    const res = compare(myScore, oppMax);
+                    if (res > 0) wins++; else if (res === 0) ties++;
+                }
+                if (numSim > batchSize) await new Promise(r => setTimeout(r, 0));
+            }
+
+            lastWinRate = (wins / numSim) * 100;
+            winBox.innerHTML = `🟢 勝率: ${lastWinRate.toFixed(2)}%<br>` +
+                `🟡 平手: ${(ties / numSim * 100).toFixed(2)}%<br>` +
+                `🔴 敗率: ${(100 - (wins + ties) / numSim * 100).toFixed(2)}%`;
+
+            simBtn.disabled = false;
+            updatePotOdds();
+        }
+
+        function updatePotOdds() {
+            if (lastWinRate === null) return;
+            const pb = document.getElementById('pot-odds-box');
+            pb.style.visibility = 'visible';
+            const pot = parseFloat(document.getElementById('potSize').value) || 0;
+            const bets = [5, 15, 25, 50];
+            let html = '';
+            bets.forEach(b => {
+                const need = (b / (pot + b)) * 100;
+                const ok = lastWinRate > need;
+                html += `加注 ${b.toString().padStart(3, ' ')}: 需${need.toFixed(1)}% | <span style="color:${ok ? '#2ecc71' : '#e74c3c'};font-weight:bold">${ok ? '✅ 值得' : '❌ 不宜'}</span><br>`;
+            });
+            pb.innerHTML = html;
+        }
+
+        window.onload = initUI;
+    </script>
+</body>
+</html>
